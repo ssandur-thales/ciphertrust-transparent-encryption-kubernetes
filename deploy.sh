@@ -1,29 +1,25 @@
 #!/bin/bash
 
-USER=""
-PASSWD=""
-SERVER=""
+. ./deploy.config
 
-CSI_DEPLOYMENT_NAME="cte-csi-deployment"
-
-DEFAULT_CRISOCK="/run/crio/crio.sock"
-DEPLOY_NAMESPACE="kube-system"
-DEPLOY_FILE_DIR=deploy
-
-# Default namespaces for operator deployment
-OPERATOR=NO
-OPR_NS_ARG=0
-CSI_NS_ARG=0
-OPERATOR_NS="kube-system"
-CSI_NS="kube-system"
-
-IMAGE_PULL_SECRET="cte-csi-image-pull-secret"
+IMAGE_PULL_SECRET="cte-csi-secret"
 
 kube_create_secret()
 {
+    if [[ "${AWSPW}" == "YES" ]]; then
+        check_exec aws
+        USER="AWS"
+        PASSWD=`aws ecr get-login-password --region us-east-1`
+        if [ $? -ne 0 ]; then
+            exit 1;
+        fi
+    fi
     # Skip if User or Password not set
-    if [ -z "${USER}" ] || [ -z "${PASSWD}" || -z "${SERVER}"]; then
+    if [ -z "${USER}" ] || [ -z "${PASSWD}" ] || [ -z "${SERVER}"]; then
         return
+    fi
+    if [[ "${SERVER}" == "" ]]; then
+        SERVER=${DEFAULT_SERVER}
     fi
 
     kubectl get secrets ${IMAGE_PULL_SECRET} --namespace=${DEPLOY_NAMESPACE} > /dev/null 2>&1
@@ -104,9 +100,17 @@ install_operator()
     OPERATOR_DEPLOY_FILE_DIR=${DEPLOY_FILE_DIR}/kubernetes/${CHART_VERSION}/operator-deploy
     kube_create_secret
     ${OPERATOR_DEPLOY_FILE_DIR}/deploy.sh --tag=${CHART_VERSION} --operator-ns=${OPERATOR_NS} --cte-ns=${CSI_NS}
+
+    exit 0
 }
 
 get_chart_version() {
+
+    if [[ ${1} = "latest" ]]; then
+        CHART_VERSION=`readlink deploy/kubernetes/latest`
+        return
+    fi
+
     local IFS=.
     vers=($1)
     if [ ${#vers[@]} -ne 4 ]; then
@@ -128,7 +132,7 @@ start()
 {
     check_exec kubectl
 
-    CHART_VERSION=latest
+    CHART_VERSION=latest-1.3.0
     if [ -z "${CSI_TAG}" ]; then
         CHART_VERSION=latest
     else
@@ -142,15 +146,23 @@ start()
     fi
 
     if [[ ${OPERATOR} == "YES" ]]; then
-        install_operator
-        exit 0
+           install_operator
     fi
 
     check_exec helm
 
+    if [ -z "${NAME}" ]; then
+        NAME=${DEFAULT_IMAGE_NAME}
+    fi
     # Remove repeating /
-    IMAGE=$(echo ${SERVER}/${LOC}/cte_csi | tr -s /)
+    IMAGE=$(echo ${SERVER}/${LOC}/${NAME} | tr -s /)
 
+    if [ -z "${SERVER}" ]; then
+        SERVER=${DEFAULT_SERVER}
+    fi
+    if [ -z "${LOC}" ]; then
+        LOC=${DEFAULT_LOC}
+    fi
     kube_create_secret
 
     kube_autodetect_crisocket
@@ -159,8 +171,10 @@ start()
     cd "${DEPLOY_FILE_DIR}/kubernetes"
 
     # "upgrade --install" will install if no prioir install exists, else upgrade
-    HELM_CMD="helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME}
-              ./${CHART_VERSION} ${EXTRA_OPTIONS}"
+    helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME} ./csi-deploy-chart \
+	    --set image.cteCsiImage=${IMAGE} --set image.cteCsiTag=${CSI_TAG} --set CRISocket=${CRISOCK} \
+	    --set namespace=${DEPLOY_NAMESPACE}
+
     echo ${HELM_CMD}
     ${HELM_CMD}
 }
@@ -168,8 +182,17 @@ start()
 usage()
 {
     echo  "Options :"
+    echo  "-s | --server=   Container registry server value."
+    echo  "                             Default: gitlabent.thalesesec.com:5050"
+    echo  "-u | --user=     Container registry user name value."
+    echo  "-p | --passwd=   Container registry user password value."
+    echo  "-l | --loc=      Location of image in the server"
+    echo  "                             Default: agents/core-dev/cte-k8-builder"
+    echo  "-n | --name=      name of image in the server"
+    echo  "                             Default: cte_csi"
     echo  "-t | --tag=      Tag of image on the server"
     echo  "                             Default: latest"
+    echo  "-a | --awspw     Generate short term password for image repo"
     echo  "-r | --remove    Undeploy the CSI driver and exit"
     echo  "-o | --operator  Deploy CTE-K8s Operator and CSI driver"
     echo  "--operator-ns=   The namespace in which to deploy the Operator"
@@ -177,9 +200,15 @@ usage()
 }
 
 # main
+if [ $# -eq 0 ]; then
+    echo "Please provide the arguments."
+    echo ""
+    usage
+    exit 1
+fi
 
-L_OPTS="server:,user:,passwd:,tag:,remove,help,operator-ns:,cte-ns:,operator"
-S_OPTS="s:u:p:t:rho"
+L_OPTS="server:,user:,passwd:,loc:,tag:,awspw,remove,help,operator-ns:,cte-ns:,operator"
+S_OPTS="s:u:p:l:t:arho"
 options=$(getopt -a -l ${L_OPTS} -o ${S_OPTS} -- "$@")
 if [ $? -ne 0 ]; then
         exit 1
@@ -204,9 +233,21 @@ while true ; do
             PASSWD=${2}
             shift 2
             ;;
+        -l|--loc)
+            LOC=${2}
+            shift 2
+            ;;
+        -n|--name)
+            NAME=${2}
+            shift 2
+            ;;
         -t|--tag)
             CSI_TAG=${2}
             shift 2
+            ;;
+        -a|--awspw)
+            AWSPW="YES"
+            shift
             ;;
         -r|--remove)
             REMOVE="YES"
@@ -251,4 +292,5 @@ if [[ "${REMOVE}" == "YES" ]]; then
 else
     echo "Starting the cte-csi containers."
 fi
+
 start

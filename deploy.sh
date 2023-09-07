@@ -84,15 +84,51 @@ remove()
 
 kube_autodetect_crisocket()
 {
-	CRISOCK=`kubectl get nodes -o jsonpath='{range .items[0]}{.metadata.annotations.kubeadm\.alpha\.kubernetes\.io/cri-socket}'`
+	if [ -n "${CRISOCK}" ]; then
+		echo "Automatic detection of CRI socket is disabled, using user provided path"
+		return
+	fi
+        echo "Automatic detection of CRI socket is enabled"
+	# detect CRI socket path based on kubeadm annotations.
+	KUBECTL_OUT=`kubectl get nodes -o jsonpath='{range .items[0]}{.metadata.annotations.kubeadm\.alpha\.kubernetes\.io/cri-socket}'`
 	if [ $? -ne 0 ]; then
-		exit 1;
+		exit 1
 	fi
-	CRISOCK=${CRISOCK#"unix://"}
-	if [ -z "${CRISOCK}" ]; then
-		CRISOCK=${DEFAULT_CRISOCK}
+	CRISOCK=${KUBECTL_OUT#"unix://"}
+	if [ -n "${CRISOCK}" ]; then
+		echo "Found exact CRI socket path using kubeadm annotations."
+		return
 	fi
-	echo "Using CRISocket path:" ${CRISOCK}
+	# detect container runtime
+	KUBECTL_OUT=`kubectl get node -o=jsonpath="{.items[0].status.nodeInfo.containerRuntimeVersion}"`
+	if [ $? -ne 0 ]; then
+		exit 1
+	fi
+	# retrieve container runtime name from kubectl output, ex: cri-o://1.25.1
+	CRT=${KUBECTL_OUT%://*}
+	if [ -n "$CRT" ]; then
+		case $CRT in
+			containerd)
+				CRISOCK="/run/containerd/containerd.sock"
+				;;
+			cri-o)
+				CRISOCK="/run/crio/crio.sock"
+				;;
+			docker)
+				CRISOCK="/run/cri-dockerd.sock"
+				;;
+			*)
+				echo "Unsupported container runtime $CRT"
+				CRISOCK=
+				;;
+		esac
+		if [ -n "$CRISOCK" ]; then
+			echo "Using default CRI socket path $CRISOCK for container runtime $CRT"
+			return
+		fi
+	fi
+	echo "Unable to detect CRI socket path for your configuration. Provide path with --cri-sock option."
+	exit 1
 }
 
 install_operator()
@@ -166,6 +202,7 @@ start()
     kube_create_secret
 
     kube_autodetect_crisocket
+    echo "Using CRISocket path:" ${CRISOCK}
 
     echo "Deploying $CSI_DEPLOYMENT_NAME using helm chart..."
     cd "${DEPLOY_FILE_DIR}/kubernetes"
@@ -197,6 +234,7 @@ usage()
     echo  "-o | --operator  Deploy CTE-K8s Operator and CSI driver"
     echo  "--operator-ns=   The namespace in which to deploy the Operator"
     echo  "--cte-ns=        The namespace in which to deploy the CSI driver"
+    echo  "--cri-sock=      Container Runtime Interface socket path"
 }
 
 # main
@@ -207,7 +245,7 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-L_OPTS="server:,user:,passwd:,loc:,tag:,awspw,remove,help,operator-ns:,cte-ns:,operator"
+L_OPTS="server:,user:,passwd:,loc:,tag:,awspw,remove,help,operator-ns:,cte-ns:,operator,cri-sock:"
 S_OPTS="s:u:p:l:t:arho"
 options=$(getopt -a -l ${L_OPTS} -o ${S_OPTS} -- "$@")
 if [ $? -ne 0 ]; then
@@ -266,6 +304,10 @@ while true ; do
             CSI_NS_ARG=1
             CSI_NS=${2}
             DEPLOY_NAMESPACE=${2}
+            shift 2
+            ;;
+       --cri-sock)
+            CRISOCK=${2}
             shift 2
             ;;
         --)

@@ -1,8 +1,22 @@
 #!/bin/bash
 
-. ./deploy.config
+USER=""
+PASSWD=""
+SERVER=""
+
+CSI_DEPLOYMENT_NAME="cte-csi-deployment"
+CRISOCK=""
+DEPLOY_NAMESPACE="kube-system"
+DEPLOY_FILE_DIR=deploy
 
 IMAGE_PULL_SECRET="cte-csi-secret"
+
+# Default namespaces for operator deployment
+OPERATOR=NO
+OPR_NS_ARG=0
+CSI_NS_ARG=0
+OPERATOR_NS="kube-system"
+CSI_NS="kube-system"
 
 kube_create_secret()
 {
@@ -14,12 +28,10 @@ kube_create_secret()
             exit 1;
         fi
     fi
+
     # Skip if User or Password not set
     if [ -z "${USER}" ] || [ -z "${PASSWD}" ] || [ -z "${SERVER}"]; then
         return
-    fi
-    if [[ "${SERVER}" == "" ]]; then
-        SERVER=${DEFAULT_SERVER}
     fi
 
     kubectl get secrets ${IMAGE_PULL_SECRET} --namespace=${DEPLOY_NAMESPACE} > /dev/null 2>&1
@@ -141,38 +153,34 @@ install_operator()
 }
 
 get_chart_version() {
-
-    if [[ ${1} = "latest" ]]; then
-        CHART_VERSION=`readlink deploy/kubernetes/latest`
-        return
-    fi
-
-    local IFS=.
-    vers=($1)
-    if [ ${#vers[@]} -ne 4 ]; then
-        echo "Invalid tag version"
-        exit 1
-    fi
-    char_version=""
-    for i in ${vers}; do
-        if [ ! "$i" -ge 0 ]; then
-            echo "Invalid tag version"
-            exit 1
-        fi
-    done
-
-    CHART_VERSION=${vers[0]}.${vers[1]}.${vers[2]}
+    #Tag can be of form "latest", "1.2.0-latest", "latest-1.3.0"
+    echo $1 | awk 'BEGIN { OFS="."; FS="[.-]" } {
+        if (NF == 1) {
+                if ( $1 == "latest" )
+                        print "latest"
+        } else if (NF == 4) {
+                if ( $1 == "latest" )
+                        print $2,$3,$4
+                else
+                        print $1,$2,$3
+        } else {
+                print "InvalidTag"
+        }
+    }'
 }
 
 start()
 {
     check_exec kubectl
 
-    CHART_VERSION=latest-1.3.0
-    if [ -z "${CSI_TAG}" ]; then
-        CHART_VERSION=latest
+    if [[ -z "${CSI_TAG}" ]]; then
+        CHART_VERSION="latest"
     else
-        get_chart_version $CSI_TAG
+        CHART_VERSION=`get_chart_version $CSI_TAG`
+	if [[ "${CHART_VERSION}" = "InvalidTag" ]]; then
+            echo "Invalid tag version - ${CSI_TAG}"
+            exit 1
+        fi
         EXTRA_OPTIONS="${EXTRA_OPTIONS} --set image.tag=${CSI_TAG}"
     fi
 
@@ -191,7 +199,7 @@ start()
         NAME=${DEFAULT_IMAGE_NAME}
     fi
     # Remove repeating /
-    IMAGE=$(echo ${SERVER}/${LOC}/${NAME} | tr -s /)
+    IMAGE=$(echo ${SERVER}/${LOC}/cte_csi | tr -s /)
 
     if [ -z "${SERVER}" ]; then
         SERVER=${DEFAULT_SERVER}
@@ -203,15 +211,14 @@ start()
 
     kube_autodetect_crisocket
     echo "Using CRISocket path:" ${CRISOCK}
+    EXTRA_OPTIONS="${EXTRA_OPTIONS} --set CRISocket=${CRISOCK}"
 
     echo "Deploying $CSI_DEPLOYMENT_NAME using helm chart..."
     cd "${DEPLOY_FILE_DIR}/kubernetes"
 
     # "upgrade --install" will install if no prioir install exists, else upgrade
-    helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME} ./csi-deploy-chart \
-	    --set image.cteCsiImage=${IMAGE} --set image.cteCsiTag=${CSI_TAG} --set CRISocket=${CRISOCK} \
-	    --set namespace=${DEPLOY_NAMESPACE}
-
+    HELM_CMD="helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME}
+              ./${CHART_VERSION} ${EXTRA_OPTIONS}"
     echo ${HELM_CMD}
     ${HELM_CMD}
 }
@@ -219,14 +226,6 @@ start()
 usage()
 {
     echo  "Options :"
-    echo  "-s | --server=   Container registry server value."
-    echo  "                             Default: gitlabent.thalesesec.com:5050"
-    echo  "-u | --user=     Container registry user name value."
-    echo  "-p | --passwd=   Container registry user password value."
-    echo  "-l | --loc=      Location of image in the server"
-    echo  "                             Default: agents/core-dev/cte-k8-builder"
-    echo  "-n | --name=      name of image in the server"
-    echo  "                             Default: cte_csi"
     echo  "-t | --tag=      Tag of image on the server"
     echo  "                             Default: latest"
     echo  "-a | --awspw     Generate short term password for image repo"
@@ -273,10 +272,6 @@ while true ; do
             ;;
         -l|--loc)
             LOC=${2}
-            shift 2
-            ;;
-        -n|--name)
-            NAME=${2}
             shift 2
             ;;
         -t|--tag)

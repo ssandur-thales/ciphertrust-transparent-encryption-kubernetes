@@ -17,7 +17,7 @@ spec:
   apiburst: 300
   apiqps: 200
   imagePullSecrets:
-    - name: cte-csi-image-pull-secret
+    - name: cte-csi-secret
   registrationCleanupInterval: 1
   pauseimage: "k8s.gcr.io/pause:latest"
   volumes:

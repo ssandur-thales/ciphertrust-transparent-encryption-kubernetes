@@ -10,6 +10,7 @@ ECHO="/usr/bin/echo -e"
 AWK="/usr/bin/awk"
 GREP="/usr/bin/grep"
 
+#The top level deploy script has already checked for kubectl command.
 IS_OCP=`kubectl api-resources | awk -F' ' '{ print $2 }' | grep route.openshift.io | wc -l`
 chk_pkgs()
 {
@@ -222,8 +223,8 @@ deploy_cte_csi()
 {
     if [ ${IS_OCP} -eq 1 ]; then
         VALIDATE=""
-        sed -i s/"^  source: .*"/"  source: openshift-marketplace"/g ${DEPLOY_SCRIPT_PATH}/ctek8soperator-subscription.yaml
-        sed -i s/"^  sourceNamespace: .*"/"  sourceNamespace: openshift-operators"/g ${DEPLOY_SCRIPT_PATH}/ctek8soperator-subscription.yaml
+        sed -i s/"^  source: .*"/"  source: certified-operators"/g ${DEPLOY_SCRIPT_PATH}/ctek8soperator-subscription.yaml
+        sed -i s/"^  sourceNamespace: .*"/"  sourceNamespace: openshift-marketplace"/g ${DEPLOY_SCRIPT_PATH}/ctek8soperator-subscription.yaml
     else
         # some fields in the manifests for Openshift are not yet supported on Kubernetes.
         # Tell kubectl to ignore validation of the manifest if deploying on Kubernetes

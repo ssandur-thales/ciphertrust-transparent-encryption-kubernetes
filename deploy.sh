@@ -20,17 +20,8 @@ CSI_NS="kube-system"
 
 kube_create_secret()
 {
-    if [[ "${AWSPW}" == "YES" ]]; then
-        check_exec aws
-        USER="AWS"
-        PASSWD=`aws ecr get-login-password --region us-east-1`
-        if [ $? -ne 0 ]; then
-            exit 1;
-        fi
-    fi
-
     # Skip if User or Password not set
-    if [ -z "${USER}" ] || [ -z "${PASSWD}" ] || [ -z "${SERVER}"]; then
+    if [ -z "${USER}" ] || [ -z "${PASSWD}" ] || [ -z "${SERVER}" ]; then
         return
     fi
 
@@ -153,7 +144,7 @@ install_operator()
 }
 
 get_chart_version() {
-    #Tag can be of form "latest", "1.2.0-latest", "latest-1.3.0"
+    #Tag can be of form "latest", "X.Y.Z-latest", "latest-X.Y.Z" or "X.Y.Z.NNNN"
     echo $1 | awk 'BEGIN { OFS="."; FS="[.-]" } {
         if (NF == 1) {
                 if ( $1 == "latest" )
@@ -173,11 +164,11 @@ start()
 {
     check_exec kubectl
 
-    if [[ -z "${CSI_TAG}" ]]; then
+    if [ ! -v "${CSI_TAG}" ]; then
         CHART_VERSION="latest"
     else
         CHART_VERSION=`get_chart_version $CSI_TAG`
-	if [[ "${CHART_VERSION}" = "InvalidTag" ]]; then
+	if [[ "${CHART_VERSION}" == "InvalidTag" ]]; then
             echo "Invalid tag version - ${CSI_TAG}"
             exit 1
         fi
@@ -190,23 +181,11 @@ start()
     fi
 
     if [[ ${OPERATOR} == "YES" ]]; then
-           install_operator
+        install_operator
     fi
 
     check_exec helm
 
-    if [ -z "${NAME}" ]; then
-        NAME=${DEFAULT_IMAGE_NAME}
-    fi
-    # Remove repeating /
-    IMAGE=$(echo ${SERVER}/${LOC}/cte_csi | tr -s /)
-
-    if [ -z "${SERVER}" ]; then
-        SERVER=${DEFAULT_SERVER}
-    fi
-    if [ -z "${LOC}" ]; then
-        LOC=${DEFAULT_LOC}
-    fi
     kube_create_secret
 
     kube_autodetect_crisocket
@@ -217,8 +196,15 @@ start()
     cd "${DEPLOY_FILE_DIR}/kubernetes"
 
     # "upgrade --install" will install if no prioir install exists, else upgrade
-    HELM_CMD="helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME}
-              ./${CHART_VERSION} ${EXTRA_OPTIONS}"
+    if [ ! -v HELM_CMD ]; then
+        # the HELM_CMD variable is not defined
+        HELM_CMD="helm upgrade --install --namespace=${DEPLOY_NAMESPACE} ${CSI_DEPLOYMENT_NAME}"
+        HELM_CMD="${HELM_CMD} ./${CHART_VERSION} ${EXTRA_OPTIONS}"
+    else
+        # We are being called from a wrapper script, which defines HELM_CMD
+	HELM_CMD="${HELM_CMD} --namespace=${DEPLOY_NAMESPACE}"
+        HELM_CMD="${HELM_CMD} ${CSI_DEPLOYMENT_NAME} ./${CHART_VERSION} ${EXTRA_OPTIONS}"
+    fi
     echo ${HELM_CMD}
     ${HELM_CMD}
 }
@@ -228,7 +214,6 @@ usage()
     echo  "Options :"
     echo  "-t | --tag=      Tag of image on the server"
     echo  "                             Default: latest"
-    echo  "-a | --awspw     Generate short term password for image repo"
     echo  "-r | --remove    Undeploy the CSI driver and exit"
     echo  "-o | --operator  Deploy CTE-K8s Operator and CSI driver"
     echo  "--operator-ns=   The namespace in which to deploy the Operator"
@@ -237,15 +222,9 @@ usage()
 }
 
 # main
-if [ $# -eq 0 ]; then
-    echo "Please provide the arguments."
-    echo ""
-    usage
-    exit 1
-fi
 
-L_OPTS="server:,user:,passwd:,loc:,tag:,awspw,remove,help,operator-ns:,cte-ns:,operator,cri-sock:"
-S_OPTS="s:u:p:l:t:arho"
+L_OPTS="server:,user:,passwd:,tag:,remove,help,operator-ns:,cte-ns:,operator,cri-sock:"
+S_OPTS="s:u:p:t:rho"
 options=$(getopt -a -l ${L_OPTS} -o ${S_OPTS} -- "$@")
 if [ $? -ne 0 ]; then
         exit 1
@@ -270,17 +249,9 @@ while true ; do
             PASSWD=${2}
             shift 2
             ;;
-        -l|--loc)
-            LOC=${2}
-            shift 2
-            ;;
         -t|--tag)
             CSI_TAG=${2}
             shift 2
-            ;;
-        -a|--awspw)
-            AWSPW="YES"
-            shift
             ;;
         -r|--remove)
             REMOVE="YES"

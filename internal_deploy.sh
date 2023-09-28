@@ -51,7 +51,9 @@ start()
 
     # Set the HELM_CMD variable with options for internal deploy options
     # This will be used in the actual deploy script.
-    # IF not operator based install and if not remove, the call helm install
+    # If not operator based install and if not remove, then call helm install
+    # the deploy.sh script checks if HELM_CMD is defined and initialized. If it is, then
+    # the existing definition is used, where we configure the internal container registry
     if [ "${DEPLOY_OPTIONS}" != *"operator"* ] && [ "${DEPLOY_OPTIONS}" != *"remove"* ]; then
         # "upgrade --install" will install if no prior install exists, else upgrade
         export HELM_CMD="helm upgrade --install ${DEPLOY_OPTIONS} --set image.cteCsiImage=${IMAGE}"
@@ -160,11 +162,5 @@ while true ; do
 
     esac
 done
-
-if [[ "${DEPLOY_OPTIONS}" != *"operator"* ]] && [[ "${DEPLOY_OPTIONS}" == *"user=AWS"* ]]; then
-    echo "The -a option is allowed only with --operator option"
-    exit 1
-fi 
-
 
 start

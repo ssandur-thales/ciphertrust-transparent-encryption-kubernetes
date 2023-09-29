@@ -6,7 +6,7 @@ namespace: "kube-system"
 
 image:
   cteCsiImage: "docker.io/thalesciphertrust/ciphertrust-transparent-encryption-kubernetes"
-  cteCsiTag: "latest-1.3.0"
+  cteCsiTag: "1.3.0-latest"
   pullPolicy: Always
   logLevel: "1"
   pauseImage: "registry.k8s.io/pause:3.9"

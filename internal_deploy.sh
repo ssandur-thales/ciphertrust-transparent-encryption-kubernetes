@@ -56,7 +56,7 @@ start()
     # the existing definition is used, where we configure the internal container registry
     if [ "${DEPLOY_OPTIONS}" != *"operator"* ] && [ "${DEPLOY_OPTIONS}" != *"remove"* ]; then
         # "upgrade --install" will install if no prior install exists, else upgrade
-        export HELM_CMD="helm upgrade --install ${DEPLOY_OPTIONS} --set image.cteCsiImage=${IMAGE}"
+        export HELM_CMD="helm upgrade --install --set image.cteCsiImage=${IMAGE} --set image.cteCsiTag=${CSI_TAG}"
     fi
 
     # Call the actual deploy script with options set for internal deploy
@@ -107,6 +107,7 @@ while true ; do
             ;;
         -s|--server)
             SERVER=${2}
+            DEPLOY_OPTIONS="${DEPLOY_OPTIONS} --server=${SERVER}"
             shift 2
             ;;
         -u|--user)
@@ -126,7 +127,6 @@ while true ; do
         -t|--tag)
             CSI_TAG=${2}
             DEPLOY_OPTIONS="${DEPLOY_OPTIONS} --tag=${CSI_TAG}"
-            DEPLOY_OPTIONS="${DEPLOY_OPTIONS} -set image.cteCsiTag=${CSI_TAG}"
             shift 2
             ;;
         -a|--awspw)

@@ -164,7 +164,7 @@ start()
 {
     check_exec kubectl
 
-    if [ ! -v "${CSI_TAG}" ]; then
+    if [ ! -v "CSI_TAG" ]; then
         CHART_VERSION="latest"
     else
         CHART_VERSION=`get_chart_version $CSI_TAG`

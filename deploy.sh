@@ -172,7 +172,6 @@ start()
             echo "Invalid tag version - ${CSI_TAG}"
             exit 1
         fi
-        EXTRA_OPTIONS="${EXTRA_OPTIONS} --set image.tag=${CSI_TAG}"
     fi
 
     # some variables have to be set before we call remove for operator

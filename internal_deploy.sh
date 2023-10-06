@@ -43,6 +43,8 @@ start()
     if [ -z "${SERVER}" ]; then
         SERVER=${DEFAULT_SERVER}
     fi
+    DEPLOY_OPTIONS="${DEPLOY_OPTIONS} --server=${SERVER}"
+
     if [ -z "${LOC}" ]; then
         LOC=${DEFAULT_LOC}
     fi
@@ -107,7 +109,6 @@ while true ; do
             ;;
         -s|--server)
             SERVER=${2}
-            DEPLOY_OPTIONS="${DEPLOY_OPTIONS} --server=${SERVER}"
             shift 2
             ;;
         -u|--user)

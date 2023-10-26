@@ -45,8 +45,16 @@ start()
     fi
     DEPLOY_OPTIONS="${DEPLOY_OPTIONS} --server=${SERVER}"
 
+    # The Image URI is computed as <SERVER>/<LOC>/cte_csi
     if [ -z "${LOC}" ]; then
-        LOC=${DEFAULT_LOC}
+        if [[ "${SERVER}" == *"amazonaws.com"* ]]; then
+            # The URL for image in AWS ECR registry is of the form <server>/cte_csi
+            # set LOC to empty string
+            LOC=""
+        else
+            # The URL for image on gitlabent is of the form <server>/<forkspace>/cte_csi
+            LOC=${DEFAULT_LOC}
+        fi
     fi
     # Remove repeating /
     IMAGE=$(echo "${SERVER}/${LOC}/cte_csi" | tr -s /)

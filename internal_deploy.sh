@@ -4,7 +4,7 @@ SERVER=""
 USER=""
 PASSWD=""
 LOC=""
-CSI_TAG="latest-1.3.0"
+CSI_TAG="latest-1.4.0"
 CSI_DEPLOYMENT_NAME="cte-csi-deployment"
 
 # This values must match the values in the node server and controller yaml files
